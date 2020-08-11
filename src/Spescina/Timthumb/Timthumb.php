@@ -15,20 +15,26 @@ require_once("TimthumbExt.php");
 
 class Timthumb {
         static function get($src,$w = 0,$h = 0,$zc = 3) {
-                
+
+            $seconds_to_cache = 86400 * 30 ;
+            $ts = gmdate("D, d M Y H:i:s", time() + $seconds_to_cache) . " GMT";
+            header("Expires: $ts");
+            header("Pragma: cache");
+            header("Cache-Control: max-age=$seconds_to_cache");
+
                 $params = array(
                     'src' => $src,
                     'w' => $w,
                     'h' => $h,
                     'zc' => $zc
                 );
-                
+
                 return TimthumbExt::start($params);
         }
-        
+
         static function link($src,$w = 0,$h = 0,$zc = 1) {
                 $url = '/'.Config::get('timthumb::prefix').'/'.$w.'/'.$h.'/'.$zc.'/'.$src;
-                
+
                 return $url;
         }
 }
