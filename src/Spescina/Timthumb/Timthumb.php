@@ -15,7 +15,9 @@ require_once("TimthumbExt.php");
 
 class Timthumb {
         static function get($src,$w = 0,$h = 0,$zc = 3) {
-
+            $allowedSites = Config::get('timthumb.allowed_sites');
+            $storagePath = Config::get('timthumb.storage_path');
+            $getImageUrl = Config::get('timthumb.get_image_url');
             $seconds_to_cache = 86400 * 30 ;
             $ts = gmdate("D, d M Y H:i:s", time() + $seconds_to_cache) . " GMT";
             header("Expires: $ts");
@@ -26,14 +28,16 @@ class Timthumb {
                     'src' => $src,
                     'w' => $w,
                     'h' => $h,
-                    'zc' => $zc
+                    'zc' => $zc,
+                    'allowed_sites' => $allowedSites,
+                    'storage_path' => $storagePath,
+                    'get_image_url' => $getImageUrl
                 );
-
                 return TimthumbExt::start($params);
         }
 
         static function link($src,$w = 0,$h = 0,$zc = 1) {
-                $url = '/'.Config::get('timthumb::prefix').'/'.$w.'/'.$h.'/'.$zc.'/'.$src;
+                $url = '/'.Config::get('timthumb.prefix').'/'.$w.'/'.$h.'/'.$zc.'/'.$src;
 
                 return $url;
         }

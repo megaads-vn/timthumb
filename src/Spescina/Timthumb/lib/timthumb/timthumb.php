@@ -122,7 +122,7 @@ if(! defined('WEBSHOT_XVFB_RUNNING') )	define ('WEBSHOT_XVFB_RUNNING', false);		
 
 
 // If ALLOW_EXTERNAL is true and ALLOW_ALL_EXTERNAL_SITES is false, then external images will only be fetched from these domains and their subdomains.
-if(! isset($ALLOWED_SITES)){
+// if(! isset($ALLOWED_SITES) || empty($ALLOWED_SITES)){
 	$ALLOWED_SITES = array (
 		'flickr.com',
 		'staticflickr.com',
@@ -134,7 +134,7 @@ if(! isset($ALLOWED_SITES)){
 		'imageshack.us',
 		'tinypic.com',
 	);
-}
+// }
 // -------------------------------------------------------------
 // -------------- STOP EDITING CONFIGURATION HERE --------------
 // -------------------------------------------------------------
@@ -161,6 +161,10 @@ class tt {
 	protected $filePrependSecurityBlock = "<?php die('Execution denied!'); //"; //Designed to have three letter mime type, space, question mark and greater than symbol appended. 6 bytes total.
 	protected static $curlDataWritten = 0;
 	protected static $curlFH = false;
+	public $allowed_sites = NULL;
+	public $storage_path = '';
+	public $getImageUrl = false;
+
 	public static function start(){
 		$tim = new tt();
 		$tim->handleErrors();
@@ -177,8 +181,12 @@ class tt {
 		$tim->handleErrors();
 		exit(0);
 	}
+	
 	public function __construct(){
 		global $ALLOWED_SITES;
+		$this->allowed_sites = $this->param('allowed_sites');
+		$this->storage_path = $this->param('storage_path');
+		$this->getImageUrl = $this->param('get_image_url');
 		$this->startTime = microtime(true);
 		date_default_timezone_set('UTC');
 		$this->debug(1, "Starting new request from " . $this->getIP() . " to " . $_SERVER['REQUEST_URI']);
@@ -242,7 +250,7 @@ class tt {
 			} else {
 				$this->debug(2, "Fetching only from selected external sites is enabled.");
 				$allowed = false;
-				foreach($ALLOWED_SITES as $site){
+				foreach($this->allowed_sites as $site){
 					if ((strtolower(substr($this->url['host'],-strlen($site)-1)) === strtolower(".$site")) || (strtolower($this->url['host'])===strtolower($site))) {
 						$this->debug(3, "URL hostname {$this->url['host']} matches $site so allowing.");
 						$allowed = true;
@@ -257,6 +265,8 @@ class tt {
 		$cachePrefix = ($this->isURL ? '_ext_' : '_int_');
 		if($this->isURL){
 			$arr = $this->params; //explode('&', $_SERVER ['QUERY_STRING']);
+			unset($arr['allowed_sites']);
+			unset($arr['storage_path']);
 			asort($arr);
 			$this->cachefile = $this->cacheDirectory . '/' . FILE_CACHE_PREFIX . $cachePrefix . md5($this->salt . implode('', $arr) . $this->fileCacheVersion) . FILE_CACHE_SUFFIX;
 		} else {
@@ -299,8 +309,7 @@ class tt {
 				}
 			} else {
 				$this->debug(3, "webshot is NOT set so we're going to try to fetch a regular image.");
-				$this->serveExternalImage();
-
+				return $this->serveExternalImage();
 			}
 		} else {
 			$this->debug(3, "Got request for internal image. Starting serveInternalImage()");
@@ -454,6 +463,7 @@ class tt {
 			return false;
 		}
 		$this->debug(3, "Calling processImageAndWriteToCache() for local image.");
+		
 		if($this->processImageAndWriteToCache($this->localImage)){
 			$this->serveCacheFile();
 			return true;
@@ -816,7 +826,16 @@ class tt {
 		unset($array[count($array) - 1]);
 		$path = join("/", $array);
 		$path = ltrim( $path, "/");
-		echo exec("mkdir -p '$path'");
+		if ($path == "" || $fileName == "") {
+			$path = $_SERVER['DOCUMENT_ROOT'] . $this->storage_path;
+			$fileName = explode("/", $this->src);
+			$fileName = $path . "/" .end($fileName);
+		}
+		if (!file_exists($path)) {
+			$old = umask(0);
+			mkdir("$path", 0777);
+			umask($old);
+		}
 		copy($tempfile, $fileName);
 		@unlink($tempfile);
 		$this->debug(3, "Locking and replacing cache file.");
@@ -840,7 +859,13 @@ class tt {
 		$this->debug(3, "Done image replace with security header. Cleaning up and running cleanCache()");
 		imagedestroy($canvas);
 		imagedestroy($image);
-		return true;
+		if ($this->getImageUrl) {
+			$fileName = explode("/", $fileName);
+			$fileName = end($fileName);
+			return $this->storage_path . "/" . $fileName;
+		} else {
+			return true;
+		}
 	}
 	protected function calcDocRoot(){
 		$docRoot = @$_SERVER['DOCUMENT_ROOT'];
@@ -996,18 +1021,23 @@ class tt {
 			$this->error("Invalid URL supplied.");
 			return false;
 		}
+		$srcFileName = explode("/", $this->src);
+		$fileName = end($srcFileName);
+		$srcFileName =  $_SERVER['DOCUMENT_ROOT'] . "/". $this->storage_path . "/" . end($srcFileName);
+		if (file_exists($srcFileName) && $this->getImageUrl) {
+			return $this->storage_path . "/" . $fileName;
+		}
 		$tempfile = tempnam($this->cacheDirectory, 'timthumb');
 		$this->debug(3, "Fetching external image into temporary file $tempfile");
 		$this->toDelete($tempfile);
 		#fetch file here
-		if(! $this->getURL($this->src, $tempfile)){
+		if(!$this->getURL($this->src, $tempfile)){
 			@unlink($this->cachefile);
 			touch($this->cachefile);
 			$this->debug(3, "Error fetching URL: " . $this->lastURLError);
 			$this->error("Error reading the URL you specified from remote host." . $this->lastURLError);
 			return false;
 		}
-
 		$mimeType = $this->getMimeType($tempfile);
 		if(! preg_match("/^image\/(?:jpg|jpeg|gif|png)$/i", $mimeType)){
 			$this->debug(3, "Remote file has invalid mime type: $mimeType");
@@ -1015,6 +1045,10 @@ class tt {
 			touch($this->cachefile);
 			$this->error("The remote file is not a valid image.");
 			return false;
+		}
+		if ($this->getImageUrl) {
+			$imageUrl = $this->processImageAndWriteToCache($tempfile);
+			return $imageUrl;
 		}
 		if($this->processImageAndWriteToCache($tempfile)){
 			$this->debug(3, "Image processed succesfully. Serving from cache");
@@ -1055,6 +1089,7 @@ class tt {
 			return true;
 		}
 		$content = file_get_contents ($this->cachefile);
+		
 		if ($content != FALSE) {
 			$content = substr($content, strlen($this->filePrependSecurityBlock) + 6);
 			echo $content;
@@ -1108,7 +1143,7 @@ class tt {
 
 			case 'image/png':
 				$image = imagecreatefrompng ($src);
-                                imagealphablending($image, true); // setting alpha blending on
+                imagealphablending($image, true); // setting alpha blending on
 				imagesavealpha($image, true); // save alphablending setting (important)
 				break;
 
@@ -1196,10 +1231,11 @@ class tt {
 			curl_setopt ($curl, CURLOPT_RETURNTRANSFER, TRUE);
 			curl_setopt ($curl, CURLOPT_HEADER, 0);
 			curl_setopt ($curl, CURLOPT_SSL_VERIFYPEER, FALSE);
-			curl_setopt ($curl, CURLOPT_WRITEFUNCTION, 'tt::curlWrite');
+			// curl_setopt ($curl, CURLOPT_WRITEFUNCTION, 'tt::curlWrite');
+			curl_setopt ($curl, CURLOPT_WRITEFUNCTION, array($this, 'curlWrite'));
 			@curl_setopt ($curl, CURLOPT_FOLLOWLOCATION, true);
 			@curl_setopt ($curl, CURLOPT_MAXREDIRS, 10);
-
+			
 			$curlResult = curl_exec($curl);
 			fclose(self::$curlFH);
 			$httpStatus = curl_getinfo($curl, CURLINFO_HTTP_CODE);
