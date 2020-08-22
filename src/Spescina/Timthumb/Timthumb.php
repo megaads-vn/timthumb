@@ -38,7 +38,6 @@ class Timthumb {
 
         static function link($src,$w = 0,$h = 0,$zc = 1) {
                 $url = '/'.Config::get('timthumb.prefix').'/'.$w.'/'.$h.'/'.$zc.'/'.$src;
-
                 return $url;
         }
 }
