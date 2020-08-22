@@ -1,6 +1,6 @@
 <?php
 
-Route::group(array('prefix' => Config::get('timthumb::prefix')), function() {
+Route::group(array('prefix' => Config::get('timthumb.prefix')), function() {
     
         Route::get('{w}/{h}/{zc}/{src}', function($w,$h,$zc,$src) {
             return Timthumb::get($src, $w, $h, $zc);
